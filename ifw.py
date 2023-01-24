@@ -10,6 +10,12 @@ class IFW_Model(Enum):
 
 
 class IFW:
+    '''
+    A class to access and control the Optec IFW and IFW2 line of Filter Wheels.
+
+    Requires the COM port of the wheel to function.
+    open() can be used to open or change the COM port and must be called before using the wheel.
+    '''
     wheel_id = 'A'
     firmware_version = 1.00
     serial_number = '****'
@@ -70,7 +76,7 @@ class IFW:
             return res
 
     def open(self, port=None):
-
+        '''Opens the IFW on the specified COM Port. This must be called before the IFW can be used.'''
         if port is not None:
             self.port = port
 
@@ -102,12 +108,17 @@ class IFW:
         self.get_filter_names()
 
     def close(self):
+        '''Closes and releases the connection to the IFW'''
         self._connected = False
         self._ser.write(bytes("WEXITS", 'utf-8'))
         self._ser.close()
         self._ser = None
 
     def home(self):
+        '''
+        Homes the Wheel. 
+        Make sure to monitor is_homing to block until the home is complete.
+        '''
         self._assert_connected()
         self.is_homed = False
         self.is_homing = True
@@ -130,6 +141,10 @@ class IFW:
         self.get_filter_names()
 
     def move_to_filter(self, position):
+        '''
+        Move the Wheel to a given filter. 
+        Make sure to monitor is_moving to block until the move is complete.
+        '''
         self._assert_connected()
 
         if position < 1 or position > self.number_of_filters():
@@ -159,12 +174,14 @@ class IFW:
         self.is_moving = False
 
     def get_wheel_id(self):
+        '''Returns the Wheel ID (A-K) of the current Wheel'''
         self._assert_connected()
         res = self.__read_write("WIDENT")
         self.wheel_id = res.strip().decode("utf-8")
         return self.wheel_id
 
     def get_current_filter(self):
+        '''Returns the current position of the Wheel.'''
         self._assert_connected()
         res = self.__read_write("WFxxxx")
         return int(res)
@@ -200,6 +217,7 @@ class IFW:
                 "The IFW must be connected to perform this operation")
 
     def get_filter_names(self):
+        '''Returns all names for the current wheel.'''
         self._assert_connected()
         res = self.__read_write("WRxxxx")
         if self.model is IFW_Model.Unknown:
@@ -216,6 +234,7 @@ class IFW:
         return self.filter_names
 
     def get_filter_name(self, position = None):
+        '''Returns the current filter name or the specified filter name.'''
         if position is None:
             position = self.get_current_filter()
         return self.filter_names[position - 1]
@@ -241,6 +260,7 @@ class IFW:
             self.model = IFW_Model.Unknown
 
     def number_of_filters(self, wheel_id = None, model = None):
+        '''Returns the number of filters on the current Wheel.'''
         if wheel_id is None:
             wheel_id = self.wheel_id
         if model is None:
@@ -265,6 +285,7 @@ class IFW:
         return 0
 
     def set_filter_names(self, names, wheel_id = None, model = None):
+        '''Sets the filter names for the current or specified wheel.'''
         self._assert_connected()
         if names is None:
             raise Exception("Names must not be None")
@@ -306,11 +327,13 @@ class IFW:
 
 
     def get_wheel_name(self, wheel_id = None):
+        '''Returns the current wheel name.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
         return "Wheel: {}".format(wheel_id)
 
     def get_wheel_names(self):
+        '''Returns all wheel names'''
         wheels = []
 
         for i in 'ABCDEFGHIJK':
