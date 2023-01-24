@@ -5,36 +5,97 @@ REPORT_FALSE = 0
 
 
 class HSFW:
+    '''
+    A class to access and control the Optec HSFW line of USB Filter Wheels.
+
+    Use the get_serial_numbers method to get all attached HSFW Serial Number. 
+    open() can be used to open either 1. the only wheel attached to the system or 2. the wheel with the given serial number.
+    '''
     serial_number = '*********'
     firmware_version = 1.00
     _device = None
     _connected = False
 
-    def getIsHomed(self):
-        return self.get_hsfw_status()['is_homed']
-    is_homed = property(getIsHomed)
-
-    def getIsHoming(self):
-        return self.get_hsfw_status()['is_homing']
-    is_homing = property(getIsHoming)
-
-    def getIsMoving(self):
-        return self.get_hsfw_status()['is_moving']
-    is_moving = property(getIsMoving)
-
-    def getErrorState(self):
-        return self.get_hsfw_status()['error_state']
-    error_state = property(getErrorState)
-
-    def get_wheel_id(self):
-        return self.get_hsfw_description()['wheel_id']
-
     def get_serial_numbers():
+        '''Get the serial numbers of the attached wheels'''
         devs = hid.enumerate(0x10c4, 0x82cd)
         sns = []
         for dev in devs:
             sns.append(dev['serial_number'])
         return sns
+
+    def open(self, serial_number=None):
+        '''Opens the specified HSFW. This must be called before the HSFW can be used.'''
+        if serial_number is not None:
+            self.serial_number = serial_number
+
+        if self._device is None:
+            self._device = hid.device()
+            self._device.open(0x10c4, 0x82cd, self.serial_number)
+
+        _connected = True
+        self._get_firmware_version()
+
+    def close(self):
+        '''Closes and releases the connection to the HSFW'''
+        if self._device is not None:
+            self._device.close()
+            self._device = None
+
+        _connected = False
+
+    def _getIsHomed(self):
+        '''Returns true if the HSFW is homed. Use the is_homed property.'''
+        return self.get_hsfw_status()['is_homed']
+    is_homed = property(_getIsHomed)
+
+    def _getIsHoming(self):
+        '''Returns true if the HSFW is homing. Use the is_homing property.'''
+        return self.get_hsfw_status()['is_homing']
+    is_homing = property(_getIsHoming)
+
+    def _getIsMoving(self):
+        '''Returns true if the HSFW is moving. Use the is_moving property.'''
+        return self.get_hsfw_status()['is_moving']
+    is_moving = property(_getIsMoving)
+
+    def getErrorState(self):
+        '''
+        Returns the error state of the HSFW. 
+        0 indicates no error. 
+        Use clear_error() to clear the error.
+        Use get_error_text to get helpful text about the error.
+        '''
+        return self.get_hsfw_status()['error_state']
+    error_state = property(getErrorState)
+
+    def get_error_text(self, error_code = error_state):
+        '''Returns a text equivalent for an error code.'''
+        if error_code == 0:
+            return "No Error Set"
+        elif error_code == 1:
+            return "12VDC Power is Disconnected"
+        elif error_code ==2:
+            return "Device Stalled During Move or Home Procedure. Verify wheel is inserted and hub tensioner is secure."
+        elif error_code ==3:
+            return "Invalid Parameter Received in Output/Feature Report"
+        elif error_code ==4:
+            return "Attempted to Home Device While Device is Moving"
+        elif error_code ==5:
+            return "Attempted to Move While Device is Already Moving"
+        elif error_code ==6:
+            return "Attempted to Move Before the Device Has Been Homed"
+        elif error_code ==7:
+            return "No wheel was detected in the device. Verify wheel is inserted and hub tensioner is secure."
+        elif error_code ==8:
+            return "Unable to  determine the WheelID. (Is a magnet missing from wheel?)"
+        else:
+            return "Unknown error code"
+
+
+    def get_wheel_id(self):
+        '''Returns the Wheel ID (A-K) of the current Wheel'''
+        return self.get_hsfw_description()['wheel_id']
 
     def _get_firmware_version(self):
         description = self.get_hsfw_description()
@@ -54,25 +115,8 @@ class HSFW:
         self.serial_number = serial_number
         self.open()
 
-    def open(self, serial_number=None):
-        if serial_number is not None:
-            self.serial_number = serial_number
-
-        if self._device is None:
-            self._device = hid.device()
-            self._device.open(0x10c4, 0x82cd, self.serial_number)
-
-        _connected = True
-        self._get_firmware_version()
-
-    def close(self):
-        if self._device is not None:
-            self._device.close()
-            self._device = None
-
-        _connected = False
-
     def get_hsfw_status(self):
+        '''Returns the raw status data for the wheel.'''
         res = self._device.get_input_report(10, 8)
 
         status = {
@@ -86,6 +130,7 @@ class HSFW:
         return status
 
     def get_hsfw_description(self):
+        '''Returns the raw description data for the wheel.'''
         res = self._device.get_input_report(11, 8)
 
         status = {
@@ -100,6 +145,10 @@ class HSFW:
         return status
 
     def home(self):
+        '''
+        Homes the Wheel. 
+        Make sure to monitor is_homing to block until the home is complete.
+        '''
         if self.error_state != 0:
             self.clear_error()
 
@@ -127,6 +176,10 @@ class HSFW:
             raise Exception("Failed to home")
 
     def move_to_filter(self, position):
+        '''
+        Move the Wheel to a given filter. 
+        Make sure to monitor is_moving to block until the move is complete.
+        '''
         description = self.get_hsfw_description()
 
         if position < 1 or description['filter_count'] < position:
@@ -157,15 +210,19 @@ class HSFW:
             raise Exception("Failed to move")
 
     def number_of_filters(self):
+        '''Returns the number of filters on the current Wheel.'''
         return self.get_hsfw_description()['filter_count']
 
     def get_current_filter(self):
+        '''Returns the current position of the Wheel.'''
         return self.get_hsfw_status()['position']
 
     def clear_error(self):
+        '''Clears any error set in the wheel.'''
         self._device.write([2, 0])
 
     def get_wheel_name(self, wheel_id = None):
+        '''Returns the current wheel name.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
 
@@ -194,6 +251,7 @@ class HSFW:
         return  bytes(resp2[6:]).decode('utf-8')
 
     def get_wheel_names(self):
+        '''Returns all wheel names'''
         wheels = []
 
         for i in 'ABCDEFGHIJK':
@@ -202,6 +260,7 @@ class HSFW:
         return wheels
 
     def get_filter_name(self, position = None, wheel_id = None):
+        '''Returns the current filter name or the specified filter name.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
 
@@ -232,6 +291,7 @@ class HSFW:
         return  bytes(resp2[6:]).decode('utf-8')
 
     def get_filter_names(self, wheel_id=None):
+        '''Returns all names for the current wheel or the specified wheel.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
 
@@ -244,6 +304,7 @@ class HSFW:
 
 
     def number_of_filters(self, wheel_id = None):
+        '''Returns the number of filters on the current wheel or specified wheel.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
 
@@ -260,6 +321,7 @@ class HSFW:
             return self.get_hsfw_description()['filter_count']
 
     def set_filter_names(self, names, wheel_id = None):
+        '''Sets the filter names for the current or specified wheel.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
 
@@ -282,6 +344,7 @@ class HSFW:
             index = index +1
 
     def set_filter_name(self, name, position, wheel_id = None):
+        '''Sets the filter name for the position or current or specified wheel.'''
         if wheel_id is None:
             wheel_id = self.get_wheel_id()
 
